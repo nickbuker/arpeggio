@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
+import polars as pl
 import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
@@ -28,6 +30,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--freeze-encoder", action="store_true", default=True)
     p.add_argument("--skip-pretrain", action="store_true", help="Load existing checkpoint instead")
     return p.parse_args()
+
+
+def _split(
+    df: pl.DataFrame,
+    test_size: float,
+    random_state: int = 42,
+    stratify: np.ndarray | None = None,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Split a Polars DataFrame using row indices."""
+    idx = np.arange(len(df))
+    train_idx, test_idx = train_test_split(
+        idx, test_size=test_size, random_state=random_state, stratify=stratify
+    )
+    return df[train_idx.tolist()], df[test_idx.tolist()]
 
 
 def _make_loader(dataset, batch_size: int, shuffle: bool = False) -> DataLoader:
@@ -63,21 +79,21 @@ def main() -> None:
     # ------------------------------------------------------------------
 
     # Pretrain: 80 / 10 / 10
-    pt_train, pt_tmp = train_test_split(pretrain_sequences, test_size=0.2, random_state=42)
-    pt_val, pt_test = train_test_split(pt_tmp, test_size=0.5, random_state=42)
+    pt_train, pt_tmp = _split(pretrain_sequences, test_size=0.2)
+    pt_val, pt_test = _split(pt_tmp, test_size=0.5)
     print(
         f"\nPretrain split  — train: {len(pt_train):,}  val: {len(pt_val):,}  test: {len(pt_test):,}"
     )
 
     # Fraud: 70 / 15 / 15, stratified by whether a card has any fraud transaction
-    fraud_strata = fraud_sequences["fraud_labels"].apply(lambda x: 1 if "Yes" in x else 0)
-    fd_train, fd_tmp = train_test_split(
-        fraud_sequences, test_size=0.3, random_state=42, stratify=fraud_strata
+    fraud_strata = (
+        fraud_sequences["fraud_labels"].list.contains("Yes").cast(pl.Int8).to_numpy()
     )
-    fd_tmp_strata = fd_tmp["fraud_labels"].apply(lambda x: 1 if "Yes" in x else 0)
-    fd_val, fd_test = train_test_split(
-        fd_tmp, test_size=0.5, random_state=42, stratify=fd_tmp_strata
+    fd_train, fd_tmp = _split(fraud_sequences, test_size=0.3, stratify=fraud_strata)
+    fd_tmp_strata = (
+        fd_tmp["fraud_labels"].list.contains("Yes").cast(pl.Int8).to_numpy()
     )
+    fd_val, fd_test = _split(fd_tmp, test_size=0.5, stratify=fd_tmp_strata)
     print(
         f"Fraud split     — train: {len(fd_train):,}  val: {len(fd_val):,}  test: {len(fd_test):,}"
     )
@@ -99,11 +115,11 @@ def main() -> None:
     else:
         print("\n=== Pretraining ===")
         pt_train_loader = _make_loader(
-            TransactionDataset(pt_train.reset_index(drop=True), max_length=args.max_seq_length),
+            TransactionDataset(pt_train, max_length=args.max_seq_length),
             args.batch_size, shuffle=True,
         )
         pt_val_loader = _make_loader(
-            TransactionDataset(pt_val.reset_index(drop=True), max_length=args.max_seq_length),
+            TransactionDataset(pt_val, max_length=args.max_seq_length),
             args.batch_size,
         )
         pretrain(
@@ -121,7 +137,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     print("\n=== Retrieval Evaluation (test set) ===")
     pt_test_loader = _make_loader(
-        TransactionDataset(pt_test.reset_index(drop=True), max_length=args.max_seq_length),
+        TransactionDataset(pt_test, max_length=args.max_seq_length),
         args.batch_size,
     )
     retrieval_metrics = evaluate_retrieval(model, pt_test_loader, top_k=(1, 10, 100), device=device)
@@ -133,11 +149,11 @@ def main() -> None:
     # ------------------------------------------------------------------
     print("\n=== Fraud Fine-tuning ===")
     fd_train_loader = _make_loader(
-        FraudDataset(fd_train.reset_index(drop=True), max_history_length=args.max_seq_length),
+        FraudDataset(fd_train, max_history_length=args.max_seq_length),
         args.batch_size, shuffle=True,
     )
     fd_val_loader = _make_loader(
-        FraudDataset(fd_val.reset_index(drop=True), max_history_length=args.max_seq_length),
+        FraudDataset(fd_val, max_history_length=args.max_seq_length),
         args.batch_size,
     )
     finetune_fraud(
@@ -157,7 +173,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     print("\n=== Final Fraud Evaluation (test set) ===")
     fd_test_loader = _make_loader(
-        FraudDataset(fd_test.reset_index(drop=True), max_history_length=args.max_seq_length),
+        FraudDataset(fd_test, max_history_length=args.max_seq_length),
         args.batch_size,
     )
     fraud_metrics = evaluate_fraud(model, fraud_head, fd_test_loader, device=device)

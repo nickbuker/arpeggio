@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import polars as pl
 import torch
 from torch.utils.data import Dataset
-import pandas as pd
 
 
 class TransactionDataset(Dataset):
@@ -15,14 +15,14 @@ class TransactionDataset(Dataset):
 
     Parameters
     ----------
-    sequences_df : pd.DataFrame
+    sequences_df : pl.DataFrame
         Output of ``src.preprocessing.assemble_sequences``.
     max_length : int
         Sequences longer than this are truncated to the most recent tokens.
     """
 
-    def __init__(self, sequences_df: pd.DataFrame, max_length: int = 512) -> None:
-        self._df = sequences_df.reset_index(drop=True)
+    def __init__(self, sequences_df: pl.DataFrame, max_length: int = 512) -> None:
+        self._df = sequences_df
         self._max_length = max_length
         self._feat_cols = [
             c for c in ["Amount_bin_seq", "MCC_id_seq", "Use Chip_id_seq"]
@@ -37,7 +37,7 @@ class TransactionDataset(Dataset):
         return len(self._df)
 
     def __getitem__(self, idx: int) -> dict:
-        row = self._df.iloc[idx]
+        row = self._df.row(idx, named=True)
         seq = row["beh_seq"][-self._max_length:]
         length = len(seq)
         pad = self._max_length - length
@@ -71,7 +71,7 @@ class FraudDataset(Dataset):
 
     Parameters
     ----------
-    sequences_df : pd.DataFrame
+    sequences_df : pl.DataFrame
         Output of ``src.preprocessing.assemble_sequences`` (with fraud
         labels; i.e., built without ``pretrain=True``).
     max_history_length : int
@@ -80,10 +80,10 @@ class FraudDataset(Dataset):
 
     def __init__(
         self,
-        sequences_df: pd.DataFrame,
+        sequences_df: pl.DataFrame,
         max_history_length: int = 512,
     ) -> None:
-        self._df = sequences_df.reset_index(drop=True)
+        self._df = sequences_df
         self._max_history = max_history_length
         self._feat_cols = [
             c for c in ["Amount_bin_seq", "MCC_id_seq", "Use Chip_id_seq"]
@@ -98,7 +98,7 @@ class FraudDataset(Dataset):
         return len(self._df)
 
     def __getitem__(self, idx: int) -> dict:
-        row = self._df.iloc[idx]
+        row = self._df.row(idx, named=True)
 
         history = row["beh_seq"][:-1][-self._max_history:]
         target_token = row["beh_seq"][-1]

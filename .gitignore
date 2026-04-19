@@ -1,4 +1,11 @@
+# data
 *.zip
 *.csv
+*.json
+
+# python stuff
 __pycache__/
+
+# jupyter stuff
 .ipynb_checkpoints/
+

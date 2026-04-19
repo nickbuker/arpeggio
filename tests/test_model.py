@@ -1,7 +1,7 @@
 """Unit tests for model, dataset, and loss components."""
 
+import polars as pl
 import torch
-import pandas as pd
 import pytest
 
 from src.dataset import FraudDataset, TransactionDataset
@@ -208,26 +208,22 @@ def test_focal_bce_gamma_zero_matches_bce() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_sequences_df(n_cards: int = 10, seq_len: int = 40) -> pd.DataFrame:
-    rows = []
-    for i in range(n_cards):
-        seq = list(torch.randint(1, 200, (seq_len,)).numpy())
-        rows.append(
-            {
-                "User": i,
-                "Card": 0,
-                "beh_seq": seq,
-                "timestamps": [None] * seq_len,
-                "fraud_labels": (["No"] * (seq_len - 1)) + ["Yes"],
-                "seq_length": seq_len,
-                "Amount_bin_seq": list(torch.randint(1, 10, (seq_len,)).numpy()),
-                "MCC_id_seq": list(torch.randint(1, 20, (seq_len,)).numpy()),
-                "Use Chip_id_seq": list(torch.randint(1, 5, (seq_len,)).numpy()),
-                "Card Brand_id": 1,
-                "Card Type_id": 2,
-            }
-        )
-    return pd.DataFrame(rows)
+def _make_sequences_df(n_cards: int = 10, seq_len: int = 40) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "User": list(range(n_cards)),
+            "Card": [0] * n_cards,
+            "beh_seq": [list(torch.randint(1, 200, (seq_len,)).numpy()) for _ in range(n_cards)],
+            "timestamps": [[None] * seq_len] * n_cards,
+            "fraud_labels": [(["No"] * (seq_len - 1)) + ["Yes"]] * n_cards,
+            "seq_length": [seq_len] * n_cards,
+            "Amount_bin_seq": [list(torch.randint(1, 10, (seq_len,)).numpy()) for _ in range(n_cards)],
+            "MCC_id_seq": [list(torch.randint(1, 20, (seq_len,)).numpy()) for _ in range(n_cards)],
+            "Use Chip_id_seq": [list(torch.randint(1, 5, (seq_len,)).numpy()) for _ in range(n_cards)],
+            "Card Brand_id": [1] * n_cards,
+            "Card Type_id": [2] * n_cards,
+        }
+    )
 
 
 def test_transaction_dataset_length() -> None:
