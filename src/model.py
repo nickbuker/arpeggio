@@ -398,7 +398,19 @@ def build_model_from_artifacts(
     vocabs = artifacts["vocabs"]
 
     feat_cols = artifacts.get("beh_feature_seq_columns", [])
-    feature_vocab_sizes = {c: len(vocabs[c]) if c in vocabs else 100 for c in feat_cols}
+    bin_edges = artifacts.get("bin_edges", {})
+    feature_vocab_sizes: dict[str, int] = {}
+    for c in feat_cols:
+        if c.endswith("_bin"):
+            # Binned column: vocab size equals the number of bin edges
+            base = c[:-4]
+            feature_vocab_sizes[c] = len(bin_edges[base]) if base in bin_edges else 100
+        elif c.endswith("_id"):
+            # Encoded categorical: look up original column name in vocabs
+            base = c[:-3]
+            feature_vocab_sizes[c] = len(vocabs[base]) if base in vocabs else 100
+        else:
+            feature_vocab_sizes[c] = 100
     feature_emb_dims = {c: feature_emb_dim for c in feat_cols}
 
     attr_cols = artifacts.get("user_attr_id_columns", [])
