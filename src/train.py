@@ -173,6 +173,7 @@ def pretrain(
     global_step = 0
 
     for epoch in range(num_epochs):
+        print(f"[pretrain] epoch {epoch+1}/{num_epochs}")
         model.train()
         running_loss = 0.0
         n_batches = 0
@@ -325,6 +326,7 @@ def finetune_fraud(
     global_step = 0
 
     for epoch in range(num_epochs):
+        print(f"[fraud] epoch {epoch+1}/{num_epochs}")
         fraud_head.train()
         if not freeze_encoder:
             encoder.train()
