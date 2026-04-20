@@ -42,6 +42,8 @@ flowchart TD
     TOK --> ART[(artifacts.json\nbin edges · vocabs · token vocab)]
 ```
 
+**Figure 1:** The three raw CSVs are merged and parsed, optionally filtered to remove fraud transactions for self-supervised pretraining, then continuous features are log-binned, categoricals are integer-encoded, and each unique (Amount bin, MCC, Use Chip) combination is assigned a composite token ID. Transactions are grouped into per-card chronological sequences and cards with fewer than 30 transactions are dropped.
+
 Run the end-to-end preprocessing pipeline from Python:
 
 ```python
@@ -113,6 +115,8 @@ flowchart TD
     FRAUD_CKPT --> EVAL[Final fraud evaluation\nAUC · AP · F1 · Precision · Recall]
     FD_TEST --> EVAL
 ```
+
+**Figure 2:** The pipeline runs in two stages. First, the data is preprocessed twice: once with `pretrain=True` (fraud transactions removed) to train the encoder as a self-supervised next-token predictor — teaching it what a "normal" transaction sequence looks like — and once with `pretrain=False` (all transactions kept) for the downstream fraud task. The pretrained encoder is then frozen and a Deep & Cross Network head is fine-tuned on top to classify whether the final transaction in each card's history is fraudulent. Keeping the two stages separate means the encoder learns general behavioural patterns before being exposed to any fraud signal.
 
 The simplest way to run everything end-to-end is via `main.py`:
 
