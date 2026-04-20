@@ -19,6 +19,29 @@ unzip data/credit-card-transactions.zip -d data/
 
 ## Preprocessing
 
+```mermaid
+flowchart TD
+    A[credit_card_transactions-ibm_v2.csv] --> M
+    B[sd254_cards.csv] --> M
+    C[sd254_users.csv] --> M
+
+    M[Merge datasets] --> P[Parse raw formats\nstrip $ · build datetime · currency columns]
+    P --> F{pretrain=True?}
+    F -- Yes --> DROP[Drop fraud transactions]
+    F -- No --> BIN
+    DROP --> BIN
+
+    BIN[Log-bin continuous features\nAmount · Credit Limit · Income] --> ENC
+    ENC[Encode categoricals\nMCC · Use Chip · Card Brand · etc.] --> TOK
+    TOK[Build composite behavior tokens\nAmount_bin × MCC_id × Use Chip_id] --> TEMP
+    TEMP[Add temporal features\nhours since last transaction] --> SEQ
+
+    SEQ[Assemble per-card sequences\ngroup by User+Card · sort by datetime\nfilter seq_length < 30] --> OUT
+
+    OUT[(sequences DataFrame\none row per card)]
+    TOK --> ART[(artifacts.json\nbin edges · vocabs · token vocab)]
+```
+
 Run the end-to-end preprocessing pipeline from Python:
 
 ```python
@@ -47,6 +70,49 @@ sequences, artifacts = preprocess("data/", min_seq_length=10)
 ```
 
 ## Running the full pipeline
+
+```mermaid
+flowchart TD
+    RAW[(Raw CSVs)] --> PP1[Preprocess\npretrain=True]
+    RAW --> PP2[Preprocess\npretrain=False]
+
+    PP1 --> ART[(artifacts.json)]
+    PP1 --> PTS[Pretrain sequences]
+    PP2 --> FDS[Fraud sequences]
+
+    PTS --> SPLIT1[80 / 10 / 10 split]
+    FDS --> SPLIT2[70 / 15 / 15 stratified split]
+
+    SPLIT1 --> PT_TRAIN[Pretrain train]
+    SPLIT1 --> PT_VAL[Pretrain val]
+    SPLIT1 --> PT_TEST[Pretrain test]
+
+    SPLIT2 --> FD_TRAIN[Fraud train]
+    SPLIT2 --> FD_VAL[Fraud val]
+    SPLIT2 --> FD_TEST[Fraud test]
+
+    ART --> MODEL[PANTHERModel]
+
+    SKIP{--skip-pretrain\n& checkpoint exists?}
+    MODEL --> SKIP
+    SKIP -- No --> PRETRAIN
+    SKIP -- Yes --> CKPT[(panther_best.pt)]
+
+    PT_TRAIN --> PRETRAIN[Pretrain encoder\nnext-token prediction\nAdamW + WSD scheduler]
+    PT_VAL --> PRETRAIN
+    PRETRAIN --> CKPT
+
+    CKPT --> RET[Retrieval evaluation\nHR@K · NDCG@K]
+    PT_TEST --> RET
+
+    CKPT --> FRAUD[Fine-tune FraudHead\nDCN · Focal BCE loss]
+    FD_TRAIN --> FRAUD
+    FD_VAL --> FRAUD
+    FRAUD --> FRAUD_CKPT[(fraud_best.pt)]
+
+    FRAUD_CKPT --> EVAL[Final fraud evaluation\nAUC · AP · F1 · Precision · Recall]
+    FD_TEST --> EVAL
+```
 
 The simplest way to run everything end-to-end is via `main.py`:
 
